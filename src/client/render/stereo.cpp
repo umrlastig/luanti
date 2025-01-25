@@ -9,24 +9,33 @@
 #include "constants.h"
 #include "settings.h"
 
-OffsetCameraStep::OffsetCameraStep(float eye_offset)
+OffsetCameraStep::OffsetCameraStep(float eye_offset) : eye_offset(eye_offset)
 {
-	move.setTranslation(core::vector3df(eye_offset, 0.0f, 0.0f));
 }
 
 
 OffsetCameraStep::OffsetCameraStep(bool right_eye)
 {
-	float eye_offset = BS * g_settings->getFloat("3d_paralax_strength", -0.087f, 0.087f) * (right_eye ? 1 : -1);
-	move.setTranslation(core::vector3df(eye_offset, 0.0f, 0.0f));
+	eye_offset = BS * g_settings->getFloat("3d_paralax_strength", -0.087f, 0.087f) * (right_eye ? 1 : -1);
 }
 
 void OffsetCameraStep::reset(PipelineContext &context)
-{
-	base_transform = context.client->getCamera()->getCameraNode()->getRelativeTransformation();
+{	
+	scene::ICameraSceneNode* node = context.client->getSceneManager()->getActiveCamera();
+	position = node->getPosition();
+	core::vector3df toTarget = node->getTarget() - position;
+	core::vector3df upVector = node->getUpVector();
+	core::vector3df right = toTarget.crossProduct(upVector);
+	right.normalize();
+	errorstream << right.X << "," << right.Y << "," << right.Z << std::endl;
+	position += eye_offset * right;
 }
 
 void OffsetCameraStep::run(PipelineContext &context)
 {
-	context.client->getCamera()->getCameraNode()->setPosition((base_transform * move).getTranslation());
+	scene::ICameraSceneNode* node = context.client->getSceneManager()->getActiveCamera();
+	core::vector3df target = node->getTarget() + position - node->getPosition();
+	node->setPosition(position);
+	node->setTarget(target);
+	
 }

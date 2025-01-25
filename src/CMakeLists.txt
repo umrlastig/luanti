@@ -41,12 +41,23 @@ endif()
 # Set some random things default to not being visible in the GUI
 mark_as_advanced(EXECUTABLE_OUTPUT_PATH LIBRARY_OUTPUT_PATH)
 
+option(ENABLE_TILTFIVE  "Enable Tilt Five support" FALSE)
+if(ENABLE_TILTFIVE)
+	message(STATUS "Tilt Five support enabled.")
+	set(USE_TILTFIVE TRUE)
+	set(TILTFIVE_INCLUDE_DIRS "/usr/local/include/t5")
+	set(TILTFIVE_LIBRARIES "/usr/local/lib/libTiltFiveNative.so" "atomic")
+else()
+	message(STATUS "Tilt Five support disabled.")
+	set(USE_TILTFIVE FALSE)
+	set(TILTFIVE_LIBRARIES "")
+	set(TILTFIVE_INCLUDE_DIRS "")
+endif()
 
 if(NOT (BUILD_CLIENT OR BUILD_SERVER))
 	message(WARNING "Neither BUILD_CLIENT nor BUILD_SERVER is set! Setting BUILD_SERVER=true")
 	set(BUILD_SERVER TRUE)
 endif()
-
 
 option(PRECOMPILE_HEADERS "Precompile some headers (experimental; requires CMake 3.16 or later)" FALSE)
 set(PRECOMPILED_HEADERS_PATH "" CACHE FILEPATH "Path to a file listing all headers to precompile")
@@ -583,6 +594,7 @@ if(BUILD_CLIENT)
 	include_directories(SYSTEM
 		${FREETYPE_INCLUDE_DIRS}
 		${SOUND_INCLUDE_DIRS}
+		${TILTFIVE_INCLUDE_DIRS}
 	)
 endif()
 
@@ -692,6 +704,7 @@ if(BUILD_CLIENT)
 		sha256
 		${FREETYPE_LIBRARY}
 		${PLATFORM_LIBS}
+		${TILTFIVE_LIBRARIES}
 		# on Android, Luanti depends on SDL2 directly
 		# on other platforms, only IrrlichtMt depends on SDL2
 		"$<$<PLATFORM_ID:Android>:${SDL2_LIBRARIES}>"
@@ -927,7 +940,7 @@ if(MSVC)
 	endif()
 else()
 	# GCC or compatible compilers such as Clang
-	set(WARNING_FLAGS "-Wall -Wextra -Wno-unused-parameter -Werror=vla")
+	set(WARNING_FLAGS "-Wall -Wextra -Wno-unused-parameter -Werror=vla -flto=auto")
 	if(WARN_ALL)
 		set(RELEASE_WARNING_FLAGS "${WARNING_FLAGS}")
 	else()

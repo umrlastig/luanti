@@ -21,6 +21,6 @@ public:
 	void run(PipelineContext &context) override;
 	void reset(PipelineContext &context) override;
 private:
-	core::matrix4 base_transform;
-	core::matrix4 move;
+	float eye_offset;
+	core::vector3df position;
 };

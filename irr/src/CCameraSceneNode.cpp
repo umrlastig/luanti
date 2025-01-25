@@ -6,6 +6,7 @@
 #include "ISceneManager.h"
 #include "IVideoDriver.h"
 #include "os.h"
+#include "log.h"
 
 namespace irr
 {
@@ -237,6 +238,7 @@ void CCameraSceneNode::updateMatrices()
 
 	ViewArea.getTransform(video::ETS_VIEW).buildCameraLookAtMatrixLH(pos, Target, up);
 	ViewArea.getTransform(video::ETS_VIEW) *= Affector;
+
 	recalculateViewArea();
 }
 

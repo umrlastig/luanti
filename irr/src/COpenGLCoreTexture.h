@@ -465,7 +465,7 @@ public:
 		return TextureType;
 	}
 
-	GLuint getOpenGLTextureName() const
+	unsigned int getOpenGLTextureName() const
 	{
 		return TextureName;
 	}

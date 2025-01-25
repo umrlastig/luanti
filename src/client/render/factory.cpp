@@ -10,6 +10,7 @@
 #include "interlaced.h"
 #include "sidebyside.h"
 #include "secondstage.h"
+#include "tiltfive.h"
 #include "client/shadows/dynamicshadowsrender.h"
 
 struct CreatePipelineResult
@@ -61,6 +62,10 @@ void createPipeline(const std::string &stereo_mode, IrrlichtDevice *device, Clie
 	}
 	if (stereo_mode == "crossview") {
 		populateSideBySidePipeline(result.pipeline, client, false, true, result.virtual_size_scale);
+		return;
+	}
+	if (stereo_mode == "tiltfive") {
+		populateTiltFivePipeline(result.pipeline, client);
 		return;
 	}
 

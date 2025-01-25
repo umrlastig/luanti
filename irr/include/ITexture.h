@@ -303,6 +303,10 @@ public:
 	//! Returns the type of texture
 	E_TEXTURE_TYPE getType() const { return Type; }
 
+
+	//! Returns the type of texture
+	virtual unsigned int getOpenGLTextureName() const { return 0; }
+
 protected:
 	//! Helper function, helps to get the desired texture creation format from the flags.
 	/** \return Either ETCF_ALWAYS_32_BIT, ETCF_ALWAYS_16_BIT,
