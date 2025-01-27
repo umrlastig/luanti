@@ -12,6 +12,7 @@
 #include "t5/TiltFiveNative.hpp"
 #include "stereo.h"
 #include "ICameraSceneNode.h"
+#include "XrSetupCamera.h"
 
 using T5Client  = std::shared_ptr<tiltfive::Client>;
 using T5Glasses = std::shared_ptr<tiltfive::Glasses>;
@@ -19,33 +20,24 @@ using T5Glasses = std::shared_ptr<tiltfive::Glasses>;
 class TiltFiveGetPoseStep : public TrivialRenderStep
 {
 public:
-	TiltFiveGetPoseStep(T5Glasses glasses, TextureBuffer *buffer, u8 left, u8 right);
-	virtual ~TiltFiveGetPoseStep();
-
-	void reset(PipelineContext &context) override;
+	TiltFiveGetPoseStep(T5Glasses glasses, ViewState *view, TextureBuffer *buffer, u8 left, u8 right);
 	void run(PipelineContext &context) override;
-	T5_FrameInfo frameInfo;
     T5Glasses glasses;
-	bool isPoseValid;
-	irr::scene::ICameraSceneNode *camera;
-	irr::scene::ICameraSceneNode *t5camera;
+	ViewState *view;
 private:
 	TextureBuffer *buffer;
 	u8 left;
 	u8 right;
-	float fovy;
-	float aspectRatio;
 };
 
 class TiltFiveSendFrameStep : public TrivialRenderStep
 {
 public:
-	TiltFiveSendFrameStep(TiltFiveGetPoseStep *step);
-
-	void reset(PipelineContext &context) override;
+	TiltFiveSendFrameStep(T5Glasses glasses, ViewState *view);
 	void run(PipelineContext &context) override;
 private:
-	TiltFiveGetPoseStep *step;
+	T5Glasses glasses;
+	ViewState *view;
 };
 
 #endif

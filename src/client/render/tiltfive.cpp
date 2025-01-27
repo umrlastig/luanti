@@ -11,6 +11,8 @@
 #include "math.h"
 #include "client/hud.h"
 #include "client/camera.h"
+#include "client/minimap.h"
+#include "XrSetupCamera.h"
 
 constexpr std::chrono::milliseconds operator""_ms(unsigned long long ms) {
 	return std::chrono::milliseconds(ms);
@@ -45,53 +47,30 @@ T waitForService(T5Client& client, const std::function<tiltfive::Result<T>(T5Cli
 
 // TiltFiveGetPoseStep
 
-
-TiltFiveGetPoseStep::~TiltFiveGetPoseStep() {
-    if (camera) camera->drop();
-    if (t5camera) t5camera->drop();
-}
-
-TiltFiveGetPoseStep::TiltFiveGetPoseStep(T5Glasses glasses, TextureBuffer *buffer, u8 left, u8 right) :
-	glasses(glasses), isPoseValid(false), buffer(buffer), left(left), right(right)
+TiltFiveGetPoseStep::TiltFiveGetPoseStep(T5Glasses glasses, ViewState *view, TextureBuffer *buffer, u8 left, u8 right) :
+	glasses(glasses), view(view), buffer(buffer), left(left), right(right)
 {
-    float fov = 48.0;
-	int width = 1216;
-	int height = 768;
-    fovy  = fov * core::DEGTORAD64;
-    aspectRatio = width / (float) height;
-    frameInfo.vci.startY_VCI = -tan(0.5f * fovy);
+    float aspectRatio = view->Width / (float) view->Height;
+    T5_FrameInfo& frameInfo = view->frameInfo;
+    frameInfo.vci.startY_VCI = -tan(0.5f * view->FoV);
     frameInfo.vci.startX_VCI = frameInfo.vci.startY_VCI * aspectRatio;
     frameInfo.vci.width_VCI = -2.0f * frameInfo.vci.startX_VCI;
     frameInfo.vci.height_VCI = -2.0f * frameInfo.vci.startY_VCI;
-    frameInfo.texWidth_PIX = width;
-    frameInfo.texHeight_PIX = height;
+    frameInfo.texWidth_PIX = view->Width;
+    frameInfo.texHeight_PIX = view->Height;
     frameInfo.isUpsideDown = false;
     frameInfo.isSrgb = false;
     frameInfo.rotToLVC_GBD = { 0., 0., 0., 0. };
     frameInfo.rotToRVC_GBD = { 0., 0., 0., 0. };
     frameInfo.posLVC_GBD = { 0., 0., 0. };
     frameInfo.posRVC_GBD = { 0., 0., 0. };
-
-    t5camera = nullptr;
-    camera = nullptr;
 }
 
-void TiltFiveGetPoseStep::reset(PipelineContext &context)
+void TiltFiveGetPoseStep::run(PipelineContext &context)
 {
-    scene::ISceneManager* scene = context.client->getSceneManager();
-    if (!camera) {
-        camera = scene->getActiveCamera();
-        camera->grab();
-    }
-    if (!t5camera) {
-        t5camera = scene->addCameraSceneNode(0, {0,0,2}, {0,0,0}, -1, true);
-        t5camera->grab();
-        t5camera->setFOV(fovy);
-        t5camera->setAspectRatio(aspectRatio);
-        t5camera->bindTargetAndRotation(true);
-    }
-    bool wasPoseValid = isPoseValid;
-    isPoseValid = false;
+    scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
+    bool wasPoseValid = view->isPoseValid;
+    view->isPoseValid = false;
 	auto pose = glasses->getLatestGlassesPose(kT5_GlassesPoseUsage_GlassesPresentation);
 	if (!pose) {
         if (!wasPoseValid) return;
@@ -102,57 +81,52 @@ void TiltFiveGetPoseStep::reset(PipelineContext &context)
 		}
         return;
 	}
-    isPoseValid = true;
+    view->isPoseValid = true;
     if (!wasPoseValid) warningstream << *pose << std::endl;
+    T5_FrameInfo& frameInfo = view->frameInfo;
     frameInfo.rotToLVC_GBD = pose->rotToGLS_GBD;
     frameInfo.rotToRVC_GBD = pose->rotToGLS_GBD;
-    frameInfo.posLVC_GBD = pose->posGLS_GBD;
-    frameInfo.posRVC_GBD = pose->posGLS_GBD;
 	frameInfo.leftTexHandle  = reinterpret_cast<void*>(static_cast<uintptr_t>(buffer->getTexture(left)->getOpenGLTextureName()));
 	frameInfo.rightTexHandle = reinterpret_cast<void*>(static_cast<uintptr_t>(buffer->getTexture(right)->getOpenGLTextureName()));
+    cameraNode->setNearValue(view->ZNear);
+    cameraNode->setFarValue(view->ZFar);
+    cameraNode->setFOV(view->FoV);// AngleUp, info.AngleDown, info.AngleRight, info.AngleLeft);
+    cameraNode->setAspectRatio(view->AspectRatio);
 
-    float scaling = 1000;
-    core::vector3df gbd(0,428,0);
     core::vector3df pos(pose->posGLS_GBD.x, pose->posGLS_GBD.z, pose->posGLS_GBD.y);
-    pos = pos * scaling + gbd;
-
     core::quaternion quat(pose->rotToGLS_GBD.x, pose->rotToGLS_GBD.z, pose->rotToGLS_GBD.y, pose->rotToGLS_GBD.w);
+    quat.normalize();
+
+    auto ipd = glasses->getIpd();
+    core::vector3df move(ipd ? *ipd  * 0.5f : 0,0,0);
     core::vector3df target(0,-1,0);
     core::vector3df up(0,0,1);
-    target = pos + quat * target;
-    up = quat * up;
+    move = quat * move;
+    view->TargetVector = quat * target;
+    view->UpVector = quat * up;
+    //quat.W = -quat.W; // inverse rotation
+    //quat.toEuler(view->Rotation);
+    //view->Rotation *= core::RADTODEG64;
 
-    scene->setActiveCamera(t5camera);
-    t5camera->setPosition(pos);
-    t5camera->setTarget(target);
-    t5camera->setUpVector(up);
-}
-
-void TiltFiveGetPoseStep::run(PipelineContext &context)
-{
-    scene::ISceneManager* scene = context.client->getSceneManager();
-    scene->setActiveCamera(t5camera);
+    core::vector3df left = pos - move;
+    core::vector3df right = pos + move;
+    view->Position[0] =  left * view->scaling + view->gbd;
+    view->Position[1] =  right * view->scaling + view->gbd;
+    frameInfo.posLVC_GBD = {left.X, left.Z, left.Y};
+    frameInfo.posRVC_GBD = {right.X, right.Z, right.Y};
 }
 
 // TiltFiveSendFrameStep
 
-TiltFiveSendFrameStep::TiltFiveSendFrameStep(TiltFiveGetPoseStep *step) :
-	step(step)
+TiltFiveSendFrameStep::TiltFiveSendFrameStep(T5Glasses glasses, ViewState *view) :
+	glasses(glasses), view(view)
 {
-}
-
-void TiltFiveSendFrameStep::reset(PipelineContext &context)
-{
-    scene::ISceneManager* scene = context.client->getSceneManager();
-    scene->setActiveCamera(step->camera);
 }
 
 void TiltFiveSendFrameStep::run(PipelineContext &context)
 {
-    scene::ISceneManager* scene = context.client->getSceneManager();
-    scene->setActiveCamera(step->camera);
-    if (!step->isPoseValid) return;
-    auto result = step->glasses->sendFrame(&step->frameInfo);
+    if (!view->isPoseValid) return;
+    auto result = glasses->sendFrame(&view->frameInfo);
     if (!result) {
         errorstream << "Error while sending frame: " << result.error().message() << std::endl;
     }
@@ -185,9 +159,13 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
         return;
 	}
 
-    v2f virtual_size_scale = v2f(1.0f, 1.0f);
-    auto step3D = pipeline->own(create3DStage(client, virtual_size_scale));
+    populatePlainPipeline(pipeline, client);
 
+    v2f virtual_size_scale = v2f(1.0f, 1.0f);
+    auto draw3d = pipeline->own(create3DStage(client, virtual_size_scale));
+    CameraState* camState = pipeline->createOwned<CameraState>();
+    pipeline->addStep<SaveCameraState>(camState);
+        
 	std::vector<std::string> glassesIds = *glassesIds_result;
 	for (auto& glassesId : glassesIds)
 	{
@@ -200,8 +178,6 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
         }
         T5Glasses glasses = *glasses_result;
         warningstream << "Created glasses: " << glassesId << std::endl;
-
-	    // float ipd = BS*15**(glasses->getIpd());
 
         // Get the friendly name for the glasses
         std::string friendlyName = glassesId;
@@ -235,34 +211,35 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
             continue;
         }
 
-        static const u8 TEXTURE_LEFT = 0;
-        static const u8 TEXTURE_RIGHT = 1;
-        static const u8 TEXTURE_DEPTH = 2;
+        ViewState* viewState = pipeline->createOwned<ViewState>(1216, 768, 48.0*core::DEGTORAD64, 1., 10000.);
 
         auto driver = client->getSceneManager()->getVideoDriver();
         video::ECOLOR_FORMAT color_format = selectColorFormat(driver);
         video::ECOLOR_FORMAT depth_format = selectDepthFormat(driver);
-
-        core::dimension2du size(1216, 768);
-
         TextureBuffer *buffer = pipeline->createOwned<TextureBuffer>();
+        static const u8 TEXTURE_LEFT = 0;
+        static const u8 TEXTURE_RIGHT = 1;
+        static const u8 TEXTURE_DEPTH = 2;
+        core::dimension2du size(viewState->Width, viewState->Height);
         buffer->setTexture(TEXTURE_LEFT, size, "3d_render_left", color_format);
         buffer->setTexture(TEXTURE_RIGHT, size, "3d_render_right", color_format);
         buffer->setTexture(TEXTURE_DEPTH, size, "3d_depthmap_tiltfive", depth_format);
+		TextureBufferOutput *left = pipeline->createOwned<TextureBufferOutput>(buffer, std::vector<u8> {TEXTURE_LEFT}, TEXTURE_DEPTH);
+		TextureBufferOutput *right = pipeline->createOwned<TextureBufferOutput>(buffer, std::vector<u8> {TEXTURE_RIGHT}, TEXTURE_DEPTH);
 
-		auto poseStep = pipeline->addStep<TiltFiveGetPoseStep>(glasses, buffer, TEXTURE_LEFT, TEXTURE_RIGHT);
-		auto left  = pipeline->createOwned<TextureBufferOutput>(buffer, std::vector<u8> {TEXTURE_LEFT}, TEXTURE_DEPTH);
-		pipeline->addStep<OffsetCameraStep>(false);
-		pipeline->addStep<SetRenderTargetStep>(step3D, left);
-		pipeline->addStep(step3D);
-		auto right = pipeline->createOwned<TextureBufferOutput>(buffer, std::vector<u8> {TEXTURE_RIGHT}, TEXTURE_DEPTH);
-		pipeline->addStep<OffsetCameraStep>(true);
-		pipeline->addStep<SetRenderTargetStep>(step3D, right);
-		pipeline->addStep(step3D);
-	    pipeline->addStep<TiltFiveSendFrameStep>(poseStep);
+		pipeline->addStep<TiltFiveGetPoseStep>(glasses, viewState, buffer, TEXTURE_LEFT, TEXTURE_RIGHT);
+		
+        pipeline->addStep<SetRenderTargetStep>(draw3d, left);
+		pipeline->addStep<XrSetupCamera>(viewState, 0);
+		pipeline->addStep(draw3d);
+
+		pipeline->addStep<SetRenderTargetStep>(draw3d, right);
+		pipeline->addStep<XrSetupCamera>(viewState, 1);
+		pipeline->addStep(draw3d);
+	    
+        pipeline->addStep<TiltFiveSendFrameStep>(glasses, viewState);
 	}
-
-    populatePlainPipeline(pipeline, client);
+    pipeline->addStep<RestoreCameraState>(camState);
 }
 
 #else
