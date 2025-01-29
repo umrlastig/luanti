@@ -36,6 +36,9 @@ private:
 	CameraState* state;
 };
 
+struct InputState : public RenderPipelineObject {
+};
+
 struct ViewState : public RenderPipelineObject
 {
     ViewState(u32 width, u32 height, float fovy, float znear, float zfar);
@@ -55,9 +58,16 @@ struct ViewState : public RenderPipelineObject
     f32 FoV; // radians
 	f32 ZNear;
 	f32 ZFar;
-
-    float scaling = 1000;
+    float speed = 0.005;
+    float scaling = 4000;
     core::vector3df gbd = {0,410,0};
+
+	enum CenterMode {
+		CENTER_ON_PLAYER = 0,
+		CENTER_ON_PLAYER_GROUND = 1,
+		CENTER_ON_TARGET = 2,
+		CENTER_MODES = 3
+	} center_mode;
 };
 
 //! Setup the camera for rendering to an XR view target

@@ -16,6 +16,7 @@
 
 using T5Client  = std::shared_ptr<tiltfive::Client>;
 using T5Glasses = std::shared_ptr<tiltfive::Glasses>;
+using T5Wand = std::shared_ptr<tiltfive::Wand>;
 
 class TiltFiveGetPoseStep : public TrivialRenderStep
 {
@@ -23,6 +24,8 @@ public:
 	TiltFiveGetPoseStep(T5Glasses glasses, ViewState *view, TextureBuffer *buffer, u8 left, u8 right);
 	void run(PipelineContext &context) override;
     T5Glasses glasses;
+	std::vector<T5Wand> wands;
+	std::vector<T5_WandReport> lastWandReports;
 	ViewState *view;
 private:
 	TextureBuffer *buffer;

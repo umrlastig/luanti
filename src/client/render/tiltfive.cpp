@@ -108,6 +108,33 @@ void TiltFiveGetPoseStep::run(PipelineContext &context)
     //quat.toEuler(view->Rotation);
     //view->Rotation *= core::RADTODEG64;
 
+    for (unsigned int i = 0; i < wands.size(); ++i)
+    {
+        T5_WandReport& lastWandReport = lastWandReports[i];
+        auto report = wands[i]->getLatestReport();
+        if(!report) {
+		    errorstream << "Error while reporting wand : " << report.error().message() << std::endl;
+            continue;
+        }
+        if(!report->buttonsValid) continue;
+        view->gbd.X += view->speed * view->scaling * report->stick.x;
+        view->gbd.Z += view->speed * view->scaling * report->stick.y;
+        view->gbd.Y += view->speed * view->scaling * (int(report->buttons.two) - int(report->buttons.one));
+        if(report->buttons.three && !lastWandReport.buttons.three) {
+            view->scaling *= 2;
+            if (view->scaling > 4000)
+                view->scaling = 250;
+        }
+        if(report->buttons.t5 && !lastWandReport.buttons.t5) {
+            view->center_mode = ViewState::CenterMode(view->center_mode+1);
+            if (view->center_mode == ViewState::CENTER_MODES)
+                view->center_mode = ViewState::CENTER_ON_TARGET;
+            errorstream << "TODO: tiltfive mode" << view->center_mode << std::endl;
+        }
+        if(report->buttons.a) context.client->getEnv().setTimeOfDay(6000);
+        lastWandReport = *report;
+    }
+
     core::vector3df left = pos - move;
     core::vector3df right = pos + move;
     view->Position[0] =  left * view->scaling + view->gbd;
@@ -211,6 +238,7 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
             continue;
         }
 
+ 
         ViewState* viewState = pipeline->createOwned<ViewState>(1216, 768, 48.0*core::DEGTORAD64, 1., 10000.);
 
         auto driver = client->getSceneManager()->getVideoDriver();
@@ -227,8 +255,18 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
 		TextureBufferOutput *left = pipeline->createOwned<TextureBufferOutput>(buffer, std::vector<u8> {TEXTURE_LEFT}, TEXTURE_DEPTH);
 		TextureBufferOutput *right = pipeline->createOwned<TextureBufferOutput>(buffer, std::vector<u8> {TEXTURE_RIGHT}, TEXTURE_DEPTH);
 
-		pipeline->addStep<TiltFiveGetPoseStep>(glasses, viewState, buffer, TEXTURE_LEFT, TEXTURE_RIGHT);
+		auto getPoseStep = pipeline->addStep<TiltFiveGetPoseStep>(glasses, viewState, buffer, TEXTURE_LEFT, TEXTURE_RIGHT);
 		
+        auto wandHelper = glasses->getWandStreamHelper();
+        auto wands_result = wandHelper->listWands();
+        if (wands_result && !wands_result->empty()) {
+            getPoseStep->wands = *wands_result;
+            getPoseStep->lastWandReports.resize(getPoseStep->wands.size());
+            warningstream << "Wand(s) connected to glasses " << glassesId << std::endl;
+            for(auto& wand : *wands_result)
+                warningstream << "Found :  " << wand << std::endl;
+        }
+
         pipeline->addStep<SetRenderTargetStep>(draw3d, left);
 		pipeline->addStep<XrSetupCamera>(viewState, 0);
 		pipeline->addStep(draw3d);
