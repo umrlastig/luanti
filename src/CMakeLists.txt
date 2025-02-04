@@ -45,8 +45,13 @@ option(ENABLE_TILTFIVE  "Enable Tilt Five support" FALSE)
 if(ENABLE_TILTFIVE)
 	message(STATUS "Tilt Five support enabled.")
 	set(USE_TILTFIVE TRUE)
-	set(TILTFIVE_INCLUDE_DIRS "/usr/local/include/t5")
-	set(TILTFIVE_LIBRARIES "/usr/local/lib/libTiltFiveNative.so" "atomic")
+	if(WIN32)
+		set(TILTFIVE_INCLUDE_DIRS "C:/Program Files/TiltFive/SDK/Native/include")
+		set(TILTFIVE_LIBRARIES "C:/Program Files/TiltFive/SDK/Native/lib/win/x86_64/TiltFiveNative.dll.if.lib")
+	else()
+		set(TILTFIVE_INCLUDE_DIRS "/usr/local/include/t5")
+		set(TILTFIVE_LIBRARIES "/usr/local/lib/libTiltFiveNative.so" "atomic")
+	endif()
 else()
 	message(STATUS "Tilt Five support disabled.")
 	set(USE_TILTFIVE FALSE)
@@ -718,6 +723,13 @@ if(BUILD_CLIENT)
 		)
 	endif()
 
+	if(USE_TILTFIVE AND WIN32)
+		add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"C:/Program Files/TiltFive/SDK/Native/lib/win/x86_64/TiltFiveNative.dll"
+			$<TARGET_FILE_DIR:${PROJECT_NAME}>
+		)
+	endif()
 	if(USE_GETTEXT)
 		target_link_libraries(
 			${PROJECT_NAME}

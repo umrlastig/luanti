@@ -3,7 +3,7 @@
 #include "pipeline.h"
 #include "quaternion.h"
 #include "client/camera.h"
-#include "t5/TiltFiveNative.hpp"
+#include "TiltFiveNative.hpp"
 
 struct CameraState : public RenderPipelineObject
 {
@@ -64,7 +64,7 @@ struct ViewState : public RenderPipelineObject
     float speed = 0.005;
     float scaling = 2000;
     core::vector3df gbd = {0,410,0};
-	
+
 	enum CenterMode {
 		CENTER_ON_PLAYER = 0,
 		CENTER_ON_PLAYER_GROUND = 1,

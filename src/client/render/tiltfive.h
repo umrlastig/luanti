@@ -9,7 +9,7 @@
 
 #if USE_TILTFIVE
 
-#include "t5/TiltFiveNative.hpp"
+#include "TiltFiveNative.hpp"
 #include "stereo.h"
 #include "ICameraSceneNode.h"
 #include "XrSetupCamera.h"
