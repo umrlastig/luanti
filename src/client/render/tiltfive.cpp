@@ -12,6 +12,8 @@
 #include "client/hud.h"
 #include "client/camera.h"
 #include "client/minimap.h"
+#include "client/clientmap.h"
+#include "client/content_cao.h"
 #include "XrSetupCamera.h"
 
 constexpr std::chrono::milliseconds operator""_ms(unsigned long long ms) {
@@ -68,6 +70,33 @@ TiltFiveGetPoseStep::TiltFiveGetPoseStep(T5Glasses glasses, ViewState *view, Tex
 
 void TiltFiveGetPoseStep::run(PipelineContext &context)
 {
+
+    for (unsigned int i = 0; i < wands.size(); ++i)
+    {
+        T5_WandReport& lastWandReport = lastWandReports[i];
+        auto report = wands[i]->getLatestReport();
+        if(!report) {
+		    errorstream << "Error while reporting wand : " << report.error().message() << std::endl;
+            continue;
+        }
+        if(!report->buttonsValid) continue;
+        view->gbd.X += view->speed * view->scaling * report->stick.x;
+        view->gbd.Z += view->speed * view->scaling * report->stick.y;
+        view->gbd.Y += view->speed * view->scaling * (int(report->buttons.two) - int(report->buttons.one));
+        if(report->buttons.three && !lastWandReport.buttons.three) {
+            view->scaling *= 2;
+            if (view->scaling > 4000)
+                view->scaling = 250;
+        }
+        if(report->buttons.t5 && !lastWandReport.buttons.t5) {
+            view->center_mode = ViewState::CenterMode(view->center_mode+1);
+            if (view->center_mode == ViewState::CENTER_MODES)
+                view->center_mode = ViewState::CENTER_ON_TARGET;
+            errorstream << "TODO: tiltfive mode" << view->center_mode << std::endl;
+        }
+        if(report->buttons.a) context.client->getEnv().setTimeOfDay(6000);
+        lastWandReport = *report;
+    }
     scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
     bool wasPoseValid = view->isPoseValid;
     view->isPoseValid = false;
@@ -108,39 +137,41 @@ void TiltFiveGetPoseStep::run(PipelineContext &context)
     //quat.toEuler(view->Rotation);
     //view->Rotation *= core::RADTODEG64;
 
-    for (unsigned int i = 0; i < wands.size(); ++i)
-    {
-        T5_WandReport& lastWandReport = lastWandReports[i];
-        auto report = wands[i]->getLatestReport();
-        if(!report) {
-		    errorstream << "Error while reporting wand : " << report.error().message() << std::endl;
-            continue;
-        }
-        if(!report->buttonsValid) continue;
-        view->gbd.X += view->speed * view->scaling * report->stick.x;
-        view->gbd.Z += view->speed * view->scaling * report->stick.y;
-        view->gbd.Y += view->speed * view->scaling * (int(report->buttons.two) - int(report->buttons.one));
-        if(report->buttons.three && !lastWandReport.buttons.three) {
-            view->scaling *= 2;
-            if (view->scaling > 4000)
-                view->scaling = 250;
-        }
-        if(report->buttons.t5 && !lastWandReport.buttons.t5) {
-            view->center_mode = ViewState::CenterMode(view->center_mode+1);
-            if (view->center_mode == ViewState::CENTER_MODES)
-                view->center_mode = ViewState::CENTER_ON_TARGET;
-            errorstream << "TODO: tiltfive mode" << view->center_mode << std::endl;
-        }
-        if(report->buttons.a) context.client->getEnv().setTimeOfDay(6000);
-        lastWandReport = *report;
-    }
-
     core::vector3df left = pos - move;
     core::vector3df right = pos + move;
-    view->Position[0] =  left * view->scaling + view->gbd;
-    view->Position[1] =  right * view->scaling + view->gbd;
+    view->Position[0] =  pos   * view->scaling + view->gbd;
+    view->Position[1] =  left  * view->scaling + view->gbd;
+    view->Position[2] =  right * view->scaling + view->gbd;
     frameInfo.posLVC_GBD = {left.X, left.Z, left.Y};
     frameInfo.posRVC_GBD = {right.X, right.Z, right.Y};
+    
+    // from  Camera::updateOffset()
+	f32 CAMERA_OFFSET_STEP = 200;
+    v3f cp = view->Position[0] / BS;
+    v3s16 camera_offset(
+		floorf(cp.X / CAMERA_OFFSET_STEP) * CAMERA_OFFSET_STEP,
+		floorf(cp.Y / CAMERA_OFFSET_STEP) * CAMERA_OFFSET_STEP,
+		floorf(cp.Z / CAMERA_OFFSET_STEP) * CAMERA_OFFSET_STEP
+	);
+    core::vector3df camera_offset_pos = intToFloat(camera_offset, BS);
+    view->Position[0] -=  camera_offset_pos;
+    view->Position[1] -=  camera_offset_pos;
+    view->Position[2] -=  camera_offset_pos;
+
+    float fovy = view->FoV;
+    float fovx = 2 * atan(view->AspectRatio * tan(0.5 * fovy));
+    float fovmax = std::max(fovx, fovy);
+    irr::video::SColor light_color(255, 255, 255, 255);
+
+    ClientEnvironment& env = context.client->getEnv();
+    env.getClientMap().updateCamera(view->Position[0], view->TargetVector, fovmax, camera_offset, light_color);
+	env.updateCameraOffset(camera_offset);
+    context.client->getCamera()->setCameraMode(CAMERA_MODE_THIRD);
+	GenericCAO * playercao = env.getLocalPlayer()->getCAO();
+    playercao->updateMeshCulling();
+	playercao->setChildrenVisible(true);
+    playercao->updateAttachments(); // fix display of player in 3rd person mode
+	env.getClientMap().updateDrawList();
 }
 
 // TiltFiveSendFrameStep
@@ -186,13 +217,15 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
         return;
 	}
 
-    populatePlainPipeline(pipeline, client);
+    CameraState* camState = pipeline->createOwned<CameraState>();
+    pipeline->addStep<SaveCameraState>(camState);
 
     v2f virtual_size_scale = v2f(1.0f, 1.0f);
     auto draw3d = pipeline->own(create3DStage(client, virtual_size_scale));
-    CameraState* camState = pipeline->createOwned<CameraState>();
-    pipeline->addStep<SaveCameraState>(camState);
-        
+    RenderTarget *screen = pipeline->createOwned<ScreenTarget>();
+	pipeline->addStep<SetRenderTargetStep>(draw3d, screen);
+	pipeline->addStep(draw3d);
+
 	std::vector<std::string> glassesIds = *glassesIds_result;
 	for (auto& glassesId : glassesIds)
 	{
@@ -238,9 +271,7 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
             continue;
         }
 
- 
-        ViewState* viewState = pipeline->createOwned<ViewState>(1216, 768, 48.0*core::DEGTORAD64, 1., 10000.);
-
+        ViewState* viewState = pipeline->createOwned<ViewState>(1216, 768, 48.0*core::DEGTORAD64, 1., 100000.);
         auto driver = client->getSceneManager()->getVideoDriver();
         video::ECOLOR_FORMAT color_format = selectColorFormat(driver);
         video::ECOLOR_FORMAT depth_format = selectDepthFormat(driver);
@@ -257,6 +288,17 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
 
 		auto getPoseStep = pipeline->addStep<TiltFiveGetPoseStep>(glasses, viewState, buffer, TEXTURE_LEFT, TEXTURE_RIGHT);
 		
+        pipeline->addStep<SetRenderTargetStep>(draw3d, left);
+		pipeline->addStep<XrSetupCamera>(viewState, 1);
+		pipeline->addStep(draw3d);
+
+		pipeline->addStep<SetRenderTargetStep>(draw3d, right);
+		pipeline->addStep<XrSetupCamera>(viewState, 2);
+		pipeline->addStep(draw3d);
+	    
+        pipeline->addStep<TiltFiveSendFrameStep>(glasses, viewState);
+
+
         auto wandHelper = glasses->getWandStreamHelper();
         auto wands_result = wandHelper->listWands();
         if (wands_result && !wands_result->empty()) {
@@ -267,17 +309,12 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
                 warningstream << "Found :  " << wand << std::endl;
         }
 
-        pipeline->addStep<SetRenderTargetStep>(draw3d, left);
-		pipeline->addStep<XrSetupCamera>(viewState, 0);
-		pipeline->addStep(draw3d);
-
-		pipeline->addStep<SetRenderTargetStep>(draw3d, right);
-		pipeline->addStep<XrSetupCamera>(viewState, 1);
-		pipeline->addStep(draw3d);
-	    
-        pipeline->addStep<TiltFiveSendFrameStep>(glasses, viewState);
 	}
     pipeline->addStep<RestoreCameraState>(camState);
+
+	pipeline->addStep<DrawWield>()->setRenderTarget(screen);
+	pipeline->addStep<MapPostFxStep>()->setRenderTarget(screen);
+	pipeline->addStep<DrawHUD>()->setRenderTarget(screen);
 }
 
 #else

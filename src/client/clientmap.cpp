@@ -552,6 +552,7 @@ void ClientMap::updateDrawList()
 					m_control.wanted_range * BS + mesh_sphere_radius)
 				continue; // Out of range, skip.
 
+			/* MB: disable frustum culling, as it is currently incompatible with tiltfive support
 			// Frustum culling
 			// Only do coarse culling here, to account for fast camera movement.
 			// This is needed because this function is not called every frame.
@@ -561,6 +562,7 @@ void ClientMap::updateDrawList()
 				blocks_frustum_culled++;
 				continue;
 			}
+			*/
 
 			// Calculate the vector from the camera block to the current block
 			// We use it to determine through which sides of the current block we can continue the search
@@ -997,8 +999,10 @@ void ClientMap::renderMap(video::IVideoDriver* driver, s32 pass)
 		v3f mesh_sphere_center = intToFloat(block->getPosRelative(), BS)
 				+ block_mesh->getBoundingSphereCenter();
 		f32 mesh_sphere_radius = block_mesh->getBoundingRadius();
+		/* MB: disable frustum culling, as it is currently incompatible with tiltfive support
 		if (is_frustum_culled(mesh_sphere_center, mesh_sphere_radius))
 			continue;
+		*/
 
 		// Mesh animation
 		if (pass == scene::ESNRP_SOLID) {

@@ -2,6 +2,7 @@
 
 #include "pipeline.h"
 #include "quaternion.h"
+#include "client/camera.h"
 #include "t5/TiltFiveNative.hpp"
 
 struct CameraState : public RenderPipelineObject
@@ -12,6 +13,8 @@ struct CameraState : public RenderPipelineObject
 	f32 fov, aspectratio;
 	f32 znear, zfar;
 	bool TargetAndRotationAreBound;
+	CameraMode camera_mode;
+	v3s16 camera_offset;
 };
 
 class SaveCameraState : public TrivialRenderStep
@@ -50,7 +53,7 @@ struct ViewState : public RenderPipelineObject
 	bool isPoseValid;
 
 	// HMD translation/orientation of eye relative to playspace origin
-	core::vector3df Position[2];
+	core::vector3df Position[3];
 	core::vector3df TargetVector;
 	core::vector3df UpVector;
 
@@ -59,9 +62,9 @@ struct ViewState : public RenderPipelineObject
 	f32 ZNear;
 	f32 ZFar;
     float speed = 0.005;
-    float scaling = 4000;
+    float scaling = 2000;
     core::vector3df gbd = {0,410,0};
-
+	
 	enum CenterMode {
 		CENTER_ON_PLAYER = 0,
 		CENTER_ON_PLAYER_GROUND = 1,

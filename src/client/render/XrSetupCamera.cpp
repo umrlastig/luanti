@@ -2,6 +2,7 @@
 #include "XrSetupCamera.h"
 #include "client/client.h"
 #include "client/camera.h"
+#include "client/content_cao.h"
 #include "math.h"
 
 SaveCameraState::SaveCameraState(CameraState* camState) : state(camState) {}
@@ -17,6 +18,8 @@ void SaveCameraState::run(PipelineContext &context)
     state->aspectratio = cameraNode->getAspectRatio();
     state->fov = cameraNode->getFOV();
     state->TargetAndRotationAreBound = cameraNode->getTargetAndRotationBinding();
+    state->camera_mode = context.client->getCamera()->getCameraMode();
+    state->camera_offset = context.client->getEnv().getCameraOffset();
 };
 
 
@@ -35,6 +38,12 @@ void RestoreCameraState::run(PipelineContext &context)
     cameraNode->setFOV(state->fov);
     cameraNode->updateAbsolutePosition();
     cameraNode->updateMatrices();
+    context.client->getCamera()->setCameraMode(state->camera_mode);
+    context.client->getEnv().updateCameraOffset(state->camera_offset);
+	GenericCAO * playercao = context.client->getEnv().getLocalPlayer()->getCAO();
+    playercao->updateMeshCulling();
+    playercao->setChildrenVisible(state->camera_mode > CAMERA_MODE_FIRST);
+    playercao->updateAttachments();
 }
 
 ViewState::ViewState(u32 width, u32 height, float fovy, float znear, float zfar)
