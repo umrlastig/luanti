@@ -453,6 +453,7 @@ void ClientMap::updateDrawList()
 				block->resetUsageTimer();
 				blocks_in_range_with_mesh++;
 
+			/* MB: disable frustum culling, as it is currently incompatible with tiltfive support
 				// Frustum culling
 				// Only do coarse culling here, to account for fast camera movement.
 				// This is needed because this function is not called every frame.
@@ -462,6 +463,7 @@ void ClientMap::updateDrawList()
 					blocks_frustum_culled++;
 					continue;
 				}
+				*/
 
 				// Raytraced occlusion culling - send rays from the camera to the block's corners
 				if (!m_control.range_all && occlusion_culling_enabled && m_enable_raytraced_culling &&
@@ -546,13 +548,13 @@ void ClientMap::updateDrawList()
 				mesh_sphere_radius = 0.87f * mesh_grid.cell_size * MAP_BLOCKSIZE * BS;
 			}
 
+			/* MB: disable frustum culling, as it is currently incompatible with tiltfive support
 			// First, perform a simple distance check.
 			if (!m_control.range_all &&
 				mesh_sphere_center.getDistanceFrom(intToFloat(cam_pos_nodes, BS)) >
 					m_control.wanted_range * BS + mesh_sphere_radius)
 				continue; // Out of range, skip.
 
-			/* MB: disable frustum culling, as it is currently incompatible with tiltfive support
 			// Frustum culling
 			// Only do coarse culling here, to account for fast camera movement.
 			// This is needed because this function is not called every frame.
@@ -571,6 +573,7 @@ void ClientMap::updateDrawList()
 			// Occluded near sides will further occlude the far sides
 			u8 visible_outer_sides = flags & 0x07;
 
+			/* MB: disable frustum culling, as it is currently incompatible with tiltfive support
 			// Raytraced occlusion culling - send rays from the camera to the block's corners
 			if (occlusion_culling_enabled && m_enable_raytraced_culling &&
 					block && mesh &&
@@ -578,6 +581,7 @@ void ClientMap::updateDrawList()
 				blocks_occlusion_culled++;
 				continue;
 			}
+			*/
 
 			if (mesh_grid.cell_size > 1) {
 				// Block meshes are stored in the corner block of a chunk
@@ -766,11 +770,13 @@ void ClientMap::touchMapBlocks()
 				mesh_sphere_radius = 0.0f;
 			}
 
+			/* MB: disable culling, as it is currently incompatible with tiltfive support
 			// First, perform a simple distance check.
 			if (!m_control.range_all &&
 				mesh_sphere_center.getDistanceFrom(m_camera_position) >
 					m_control.wanted_range * BS + mesh_sphere_radius)
 				continue; // Out of range, skip.
+			*/
 
 			// Keep the block alive as long as it is in range.
 			block->resetUsageTimer();
@@ -1008,7 +1014,7 @@ void ClientMap::renderMap(video::IVideoDriver* driver, s32 pass)
 		if (pass == scene::ESNRP_SOLID) {
 			// 50 nodes is pretty arbitrary but it should work somewhat nicely
 			float distance_sq = camera_position.getDistanceFromSQ(mesh_sphere_center);
-			bool faraway = distance_sq >= std::pow(BS * 50 + mesh_sphere_radius, 2.0f);
+			bool faraway = distance_sq >= std::pow(BS * 500 + mesh_sphere_radius, 2.0f);
 
 			if (block_mesh->isAnimationForced() || !faraway ||
 					mesh_animate_count < (m_control.range_all ? 200 : 50)) {
