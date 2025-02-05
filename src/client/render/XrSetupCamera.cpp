@@ -41,9 +41,12 @@ void RestoreCameraState::run(PipelineContext &context)
     context.client->getCamera()->setCameraMode(state->camera_mode);
     context.client->getEnv().updateCameraOffset(state->camera_offset);
 	GenericCAO * playercao = context.client->getEnv().getLocalPlayer()->getCAO();
-    playercao->updateMeshCulling();
-    playercao->setChildrenVisible(state->camera_mode > CAMERA_MODE_FIRST);
-    playercao->updateAttachments();
+    if (playercao)
+    {
+        playercao->updateMeshCulling();
+        playercao->setChildrenVisible(state->camera_mode > CAMERA_MODE_FIRST);
+        playercao->updateAttachments();
+    }
 }
 
 ViewState::ViewState(u32 width, u32 height, float fovy, float znear, float zfar)

@@ -285,7 +285,7 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
             friendlyName = *friendlyName_res;
             warningstream << "Obtained friendly name : " << *friendlyName_res << std::endl;
         } else if (friendlyName_res.error() == tiltfive::Error::kSettingUnknown) {
-            errorstream << "Couldn't get friendly name : Service reports it's not set" << std::endl;
+            warningstream << "Couldn't get friendly name : Service reports it's not set" << std::endl;
         } else {
             errorstream << "Error obtaining friendly name : " << friendlyName_res.error().message() << std::endl;
         }
