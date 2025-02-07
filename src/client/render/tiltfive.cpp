@@ -68,44 +68,61 @@ TiltFiveGetPoseStep::TiltFiveGetPoseStep(T5Glasses glasses, ViewState *view, Tex
     frameInfo.posRVC_GBD = { 0., 0., 0. };
 }
 
-void TiltFiveGetPoseStep::run(PipelineContext &context)
-{
-
-    for (unsigned int i = 0; i < wands.size(); ++i)
-    {
+void TiltFiveGetPoseStep::run(PipelineContext &context) {
+    for (unsigned int i = 0; i < wands.size(); ++i) {
         T5_WandReport& lastWandReport = lastWandReports[i];
         auto report = wands[i]->getLatestReport();
-        if(!report) {
-		    errorstream << "Error while reporting wand : " << report.error().message() << std::endl;
+        if (!report) {
+		    errorstream << "Error while reporting wand: " << report.error().message() << std::endl;
             continue;
         }
+
         // TODO : check report->hand ?
+    	float wandAngleDeg;
+        if (report->poseValid) {
+            core::vector3df pos(report->posAim_GBD.x, report->posAim_GBD.z, report->posAim_GBD.y);
+            //core::vector3df pos(report->posFingertips_GBD.x, report->posFingertips_GBD.z, report->posFingertips_GBD.y);
+            //core::vector3df pos(report->posGrip_GBD.x, report->posGrip_GBD.z, report->posGrip_GBD.y);
+            core::quaternion quat(report->rotToWND_GBD.x, report->rotToWND_GBD.z, report->rotToWND_GBD.y, report->rotToWND_GBD.w);
+            quat.normalize();
 
-        if(report->analogValid) {
-            view->gbd.X += view->speed * view->scaling * report->stick.x;
-            view->gbd.Z += view->speed * view->scaling * report->stick.y;
+		    core::vector3df scale(view->scaling, view->scaling, view->scaling);
+            pos = pos * view->scaling + view->gbd;
+			context.client->getCamera()->enableSceneHand(report->hand != kT5_Hand_Right, pos, scale * 0.001, quat);
 
-            // TODO : report->trigger
+        	quat.makeInverse();
+        	core::vector3df euler;
+        	quat.toEuler(euler);
+        	wandAngleDeg = -core::radToDeg(euler.Z);
+        } else {
+    		wandAngleDeg = 0;
         }
-        if(report->buttonsValid) {
+
+        if (report->analogValid) {
+        	float f = view->speed * (1 + report->trigger * 3) * view->scaling;
+        	core::vector3df movement(report->stick.x, 0, report->stick.y);
+        	if (movement.getLengthSQ() > 0.05) {
+        		movement.rotateXZBy(wandAngleDeg);
+        		view->gbd.X += f * movement.X;
+        		view->gbd.Z += f * movement.Z;
+        	}
+        }
+        if (report->buttonsValid) {
             view->gbd.Y += view->speed * view->scaling * (int(report->buttons.two) - int(report->buttons.one));
-            if(report->buttons.three && !lastWandReport.buttons.three) {
+            if (report->buttons.three && !lastWandReport.buttons.three) {
                 view->scaling *= 2;
                 if (view->scaling > 4000)
                     view->scaling = 250;
+            	auto impulse = wands[i]->sendImpulse(1, 100);
             }
-            if(report->buttons.t5 && !lastWandReport.buttons.t5) {
-                view->center_mode = ViewState::CenterMode(view->center_mode+1);
+            if (report->buttons.t5 && !lastWandReport.buttons.t5) {
+                view->center_mode = ViewState::CenterMode(view->center_mode + 1);
                 if (view->center_mode == ViewState::CENTER_MODES)
                     view->center_mode = ViewState::CENTER_ON_TARGET;
                 errorstream << "TODO: tiltfive mode" << view->center_mode << std::endl;
             }
 
-            // this is a quick workaround, we should do something more interesting with 'a'
-            if(report->buttons.a) context.client->getEnv().setTimeOfDay(6000);
-
-            if(report->buttons.b)
-            {
+            if (report->buttons.b) {
                 // emulate a key press on 'b'
                 // a user-configurable remapping would be better
                 // (cf keyboard or joystick bindings)
@@ -124,20 +141,8 @@ void TiltFiveGetPoseStep::run(PipelineContext &context)
             lastWandReport = *report; // save last buttons
         }
 
-        if(report->batteryValid) {
+        if (report->batteryValid) {
             // infostream << "Battery : " << report->battery << std::endl;
-        }
-
-        if(report->poseValid) {
-            core::vector3df pos(report->posAim_GBD.x, report->posAim_GBD.z, report->posAim_GBD.y);
-            //core::vector3df pos(report->posFingertips_GBD.x, report->posFingertips_GBD.z, report->posFingertips_GBD.y);
-            //core::vector3df pos(report->posGrip_GBD.x, report->posGrip_GBD.z, report->posGrip_GBD.y);
-            core::quaternion quat(report->rotToWND_GBD.x, report->rotToWND_GBD.z, report->rotToWND_GBD.y, report->rotToWND_GBD.w);
-            quat.normalize();
-
-		    core::vector3df scale(view->scaling, view->scaling, view->scaling);
-            pos = pos * view->scaling + view->gbd;
-			context.client->getCamera()->enableSceneHand(report->hand != kT5_Hand_Right, pos, scale * 0.001, quat);
         }
     }
     scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
@@ -242,11 +247,11 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
 	}
 	
     T5Client t5 = *client_result;
-	warningstream << "Obtained client : " << t5 << std::endl;
+	warningstream << "Obtained client: " << t5 << std::endl;
     
 	std::function<tiltfive::Result<std::string>(T5Client& t5)> func = [](T5Client& c) { return c->getServiceVersion(); };
 	std::string serviceVersion = waitForService<std::string>(t5, func, "Error while getting service version: ");
-	warningstream << "Service version : " << serviceVersion << std::endl;
+	warningstream << "Service version: " << serviceVersion << std::endl;
 
 	auto glassesIds_result = t5->listGlasses();
 	if (!glassesIds_result)
@@ -283,11 +288,11 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
         auto friendlyName_res = glasses->getFriendlyName();
         if (friendlyName_res) {
             friendlyName = *friendlyName_res;
-            warningstream << "Obtained friendly name : " << *friendlyName_res << std::endl;
+            warningstream << "Obtained friendly name: " << *friendlyName_res << std::endl;
         } else if (friendlyName_res.error() == tiltfive::Error::kSettingUnknown) {
-            warningstream << "Couldn't get friendly name : Service reports it's not set" << std::endl;
+            warningstream << "Couldn't get friendly name: Service reports it's not set" << std::endl;
         } else {
-            errorstream << "Error obtaining friendly name : " << friendlyName_res.error().message() << std::endl;
+            errorstream << "Error obtaining friendly name: " << friendlyName_res.error().message() << std::endl;
         }
         {
             // Wait for exclusive glasses connection
@@ -296,7 +301,7 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
             if (connectionResult) {
                 warningstream << "Glasses connected for exclusive use" << std::endl;
             } else {
-                errorstream << "Error connecting glasses for exclusive use : " << connectionResult.error().message() << std::endl;
+                errorstream << "Error connecting glasses for exclusive use: " << connectionResult.error().message() << std::endl;
                 continue;
             }
         }
@@ -305,7 +310,7 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
         settings.textureMode = kT5_GraphicsApi_GL_TextureMode_Pair;
         auto result = glasses->initGraphicsContext(kT5_GraphicsApi_GL, &settings);
         if (!result) {
-            errorstream << "Error initializing OpenGL context : " << result.error().message() << std::endl;
+            errorstream << "Error initializing OpenGL context: " << result.error().message() << std::endl;
             continue;
         }
 
@@ -344,7 +349,7 @@ void populateTiltFivePipeline(RenderPipeline *pipeline, Client *client)
             getPoseStep->lastWandReports.resize(getPoseStep->wands.size());
             warningstream << "Wand(s) connected to glasses " << glassesId << std::endl;
             for(auto& wand : *wands_result)
-                warningstream << "Found :  " << wand << std::endl;
+                warningstream << "Found: " << wand << std::endl;
         }
 
 	}
