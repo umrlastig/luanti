@@ -79,23 +79,66 @@ void TiltFiveGetPoseStep::run(PipelineContext &context)
 		    errorstream << "Error while reporting wand : " << report.error().message() << std::endl;
             continue;
         }
-        if(!report->buttonsValid) continue;
-        view->gbd.X += view->speed * view->scaling * report->stick.x;
-        view->gbd.Z += view->speed * view->scaling * report->stick.y;
-        view->gbd.Y += view->speed * view->scaling * (int(report->buttons.two) - int(report->buttons.one));
-        if(report->buttons.three && !lastWandReport.buttons.three) {
-            view->scaling *= 2;
-            if (view->scaling > 4000)
-                view->scaling = 250;
+        // TODO : check report->hand ?
+
+        if(report->analogValid) {
+            view->gbd.X += view->speed * view->scaling * report->stick.x;
+            view->gbd.Z += view->speed * view->scaling * report->stick.y;
+
+            // TODO : report->trigger
         }
-        if(report->buttons.t5 && !lastWandReport.buttons.t5) {
-            view->center_mode = ViewState::CenterMode(view->center_mode+1);
-            if (view->center_mode == ViewState::CENTER_MODES)
-                view->center_mode = ViewState::CENTER_ON_TARGET;
-            errorstream << "TODO: tiltfive mode" << view->center_mode << std::endl;
+        if(report->buttonsValid) {
+            view->gbd.Y += view->speed * view->scaling * (int(report->buttons.two) - int(report->buttons.one));
+            if(report->buttons.three && !lastWandReport.buttons.three) {
+                view->scaling *= 2;
+                if (view->scaling > 4000)
+                    view->scaling = 250;
+            }
+            if(report->buttons.t5 && !lastWandReport.buttons.t5) {
+                view->center_mode = ViewState::CenterMode(view->center_mode+1);
+                if (view->center_mode == ViewState::CENTER_MODES)
+                    view->center_mode = ViewState::CENTER_ON_TARGET;
+                errorstream << "TODO: tiltfive mode" << view->center_mode << std::endl;
+            }
+
+            // this is a quick workaround, we should do something more interesting with 'a'
+            if(report->buttons.a) context.client->getEnv().setTimeOfDay(6000);
+
+            if(report->buttons.b)
+            {
+                // emulate a key press on 'b'
+                // a user-configurable remapping would be better
+                // (cf keyboard or joystick bindings)
+                SEvent irrevent;
+                irrevent.KeyInput.Char = 'b';
+                irrevent.EventType = irr::EET_KEY_INPUT_EVENT;
+                irrevent.KeyInput.PressedDown = true;
+                irrevent.KeyInput.Control = false;
+                irrevent.KeyInput.Shift = false;
+                irrevent.KeyInput.Key = KEY_KEY_B;
+                context.device->postEventFromUser(irrevent);
+            }
+            // TODO : report->buttons.x
+            // TODO : report->buttons.y
+            
+            lastWandReport = *report; // save last buttons
         }
-        if(report->buttons.a) context.client->getEnv().setTimeOfDay(6000);
-        lastWandReport = *report;
+
+        if(report->batteryValid) {
+            // infostream << "Battery : " << report->battery << std::endl;
+        }
+
+        if(report->poseValid) {
+            core::vector3df pos(report->posAim_GBD.x, report->posAim_GBD.z, report->posAim_GBD.y);
+            //core::vector3df pos(report->posFingertips_GBD.x, report->posFingertips_GBD.z, report->posFingertips_GBD.y);
+            //core::vector3df pos(report->posGrip_GBD.x, report->posGrip_GBD.z, report->posGrip_GBD.y);
+            core::quaternion quat(report->rotToWND_GBD.x, report->rotToWND_GBD.z, report->rotToWND_GBD.y, report->rotToWND_GBD.w);
+            quat.normalize();
+
+		    core::vector3df scale(view->scaling, view->scaling, view->scaling);
+            pos = pos * view->scaling + view->gbd;
+			context.client->getCamera()->enableSceneHand(report->hand != kT5_Hand_Right, pos, scale * 0.001, quat);
+        }
     }
     scene::ICameraSceneNode* cameraNode = context.client->getCamera()->getCameraNode();
     bool wasPoseValid = view->isPoseValid;
@@ -115,7 +158,7 @@ void TiltFiveGetPoseStep::run(PipelineContext &context)
     T5_FrameInfo& frameInfo = view->frameInfo;
     frameInfo.rotToLVC_GBD = pose->rotToGLS_GBD;
     frameInfo.rotToRVC_GBD = pose->rotToGLS_GBD;
-	frameInfo.leftTexHandle  = reinterpret_cast<void*>(static_cast<uintptr_t>(buffer->getTexture(left)->getOpenGLTextureName()));
+	frameInfo.leftTexHandle  = reinterpret_cast<void*>(static_cast<uintptr_t>(buffer->getTexture(left )->getOpenGLTextureName()));
 	frameInfo.rightTexHandle = reinterpret_cast<void*>(static_cast<uintptr_t>(buffer->getTexture(right)->getOpenGLTextureName()));
     cameraNode->setNearValue(view->ZNear);
     cameraNode->setFarValue(view->ZFar);
@@ -145,14 +188,8 @@ void TiltFiveGetPoseStep::run(PipelineContext &context)
     frameInfo.posLVC_GBD = {left.X, left.Z, left.Y};
     frameInfo.posRVC_GBD = {right.X, right.Z, right.Y};
     
-    // from  Camera::updateOffset()
-	f32 CAMERA_OFFSET_STEP = 200;
-    v3f cp = view->Position[0] / BS;
-    v3s16 camera_offset(
-		floorf(cp.X / CAMERA_OFFSET_STEP) * CAMERA_OFFSET_STEP,
-		floorf(cp.Y / CAMERA_OFFSET_STEP) * CAMERA_OFFSET_STEP,
-		floorf(cp.Z / CAMERA_OFFSET_STEP) * CAMERA_OFFSET_STEP
-	);
+    context.client->getCamera()->setPosition(view->Position[0]);
+    v3s16 camera_offset = context.client->getCamera()->getOffset();
     core::vector3df camera_offset_pos = intToFloat(camera_offset, BS);
     view->Position[0] -=  camera_offset_pos;
     view->Position[1] -=  camera_offset_pos;
@@ -183,6 +220,7 @@ TiltFiveSendFrameStep::TiltFiveSendFrameStep(T5Glasses glasses, ViewState *view)
 
 void TiltFiveSendFrameStep::run(PipelineContext &context)
 {
+	context.client->getCamera()->disableSceneHands();
     if (!view->isPoseValid) return;
     auto result = glasses->sendFrame(&view->frameInfo);
     if (!result) {
